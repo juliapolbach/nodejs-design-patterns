@@ -15,15 +15,11 @@ function concatFiles(destination, cb, ...files) {
 }
 
 function resetDestinationFile(destination, cb) {
-        fs.readFile(destination, (err) => {
-                if (!err) {
-                        fs.unlink(destination, (err, data) => { return err ? cb(err) : cb(null, data) })
-                } else if (err && err.hasOwnProperty('code' && err.code === 'ENOENT')) {
-                        return cb(null)
-                } else {
-                        return cb(err)
-                }
-        })
+        if (fs.existsSync(destination)) {
+                fs.unlink(destination, (err, data) => { return err ? cb(err) : cb(null, data) })
+        } else {
+                return cb(null)
+        }
 }
 
 function appendContent(destination, files, cb) {
