@@ -18,6 +18,7 @@ import path from 'path'
 
 /**
  * Recursively searches for text files containing a specific keyword
+ * NOTE: This solution doesn't manage concurrency control
  * 
  * @param {string} dir - The directory to search in
  * @param {string} keyword - The keyword to search for in file contents
@@ -26,6 +27,8 @@ import path from 'path'
  *                        where matches is an array of file paths
  * @returns {void}
  */
+
+const set = new Set()
 export function recursiveFind(dir, keyword, nesting, cb) {
         const matches = []
 
@@ -43,7 +46,7 @@ function processArray(files, dir, keyword, nesting, matches, cb) {
         // instead of directly calling cb() to ensure callback is invoked
         // asynchronously, preventing potential issues with call stack
         // depth during recursive operations.  
-        
+
         if (nesting === 0) {
                 return process.nextTick(cb)
         }
@@ -52,25 +55,37 @@ function processArray(files, dir, keyword, nesting, matches, cb) {
                 return process.nextTick(cb)
         }
 
-        // Iterate allows us to iterate over an array by executing an
-        // asynchronous operation in sequence.
-        // Check recursive-find-parallel.mjs to see a parallelized solution.
-        
-        function iterate(index) {
-                if (index === files.length) {
+        // The done() function allows us to invoke the final callback
+        // only when all of them have completed their execution.
+
+        let completed = 0
+        let hasErrors = false
+
+        function done(err) {
+                if (err) {
+                        hasErrors = true
+                        return cb(err)
+                }
+                if (++completed === files.length && !hasErrors) {
                         return cb()
                 }
-
-                matchFile(dir, files[index], keyword, nesting - 1, matches, function (err) {
-                        if (err) return cb(err)
-                        iterate(index + 1)
-                })
         }
-        iterate(0)
+
+        // Tasks starts all at once
+
+        files.forEach(file => matchFile(dir, file, keyword, nesting - 1, matches, done))
 }
 
 function matchFile(dir, file, keyword, nesting, matches, cb) {
         const filePath = path.join(dir, file)
+
+        // Avoids race conditions excluding the same file
+        // from being processed multiple times
+        if (set.has(filePath)) {
+                return process.nextTick(cb())
+        }
+
+        set.add(filePath)
 
         fs.stat(filePath, (err, stat) => {
                 if (err) return cb(err)
